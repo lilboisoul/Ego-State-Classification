@@ -1,0 +1,9 @@
+{
+  "NP": [
+    "gratitude", "love", "optimism", "relief",
+    "pride", "admiration", "desire", "caring"],
+  "CP": ["anger", "annoyance", "nervousness", "disgust", "disapproval"],
+  "A": ["fear", "surprise", "realization", "confusion", "neutral"],
+  "FC": ["joy", "amusement", "approval", "excitement", "curiosity"],
+  "AC": ["sadness", "disappointment", "embarrassment", "grief", "remorse"]
+}
