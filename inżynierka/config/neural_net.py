@@ -1,14 +1,21 @@
 from config.globals import num_labels, id2label, label2id, device
-from transformers import BertTokenizer, BertForSequenceClassification
-
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+from transformers import BertTokenizer, BertForSequenceClassification, RobertaForSequenceClassification, \
+    RobertaTokenizer, DistilBertTokenizer, DistilBertForSequenceClassification, DistilBertConfig
 
 base_model = 'bert-base-uncased'
-finetuned_model = 'output/checkpoint-6000'
-model = BertForSequenceClassification.from_pretrained(finetuned_model, num_labels=num_labels, id2label=id2label,
+base_model2 = 'roberta-base'
+#base_model3 = 'distilbert-base-uncased'
+bert_model = BertForSequenceClassification.from_pretrained(base_model, num_labels=num_labels, id2label=id2label,
                                                       label2id=label2id)
+bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+
+#roberta_tokenizer = RobertaTokenizer.from_pretrained(base_model2)
+#roberta_model = RobertaForSequenceClassification.from_pretrained(base_model2, num_labels=num_labels, id2label=id2label,label2id=label2id)
+
 if device == 'cuda':
-    model = model.to('cuda')
+    if bert_model:
+        bert_model = bert_model.to('cuda')
+    #roberta_model = roberta_model.to('cuda')
 
 
 metrics = ""  # [
