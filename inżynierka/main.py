@@ -1,57 +1,47 @@
+from config.preprocessing import original_dataset_to_mapped_dataset
 from helper import *
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold, KFold
 from transformers import Trainer, TrainingArguments
-
-_train = False
+import time
+from datetime import timedelta
+start_time = time.monotonic()
+_train = True
 _evaluate = False
-_prompt = True
+_prompt = False
+#DATASET REMAPPING
+#original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-functional.csv")
+#original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-structural.csv")
+#HYPERPARAMETER SEARCH
+#hyperparameter_train_loop()
+
+
+
+
 
 if _train or _evaluate:
-
-    df = load_dataset("data/goemotions-1000-label.csv")
+    df = pd.read_csv("data/dataset-structural.csv", delimiter=";")
+    #df = load_dataset("data/goemotions-1000-label.csv")
     df = downsample_dataset(df)
 
     X = df["text"]
     y = df["label"].to_numpy()
 
     # Create 85/15 train/test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.15, stratify=y, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
     X = X_train
     y = y_train
-    # train_with_crossvalidation(model=bert_model, tokenizer=bert_tokenizer, X=X, y=y)
-    # train_with_crossvalidation(roberta_model, roberta_tokenizer, X_train, y_train)
-    if _evaluate:
-        bert_model1 = BertForSequenceClassification.from_pretrained('test_model-1', num_labels=num_labels,
-                                                                   id2label=id2label,
-                                                                   label2id=label2id)
-        bert_model2 = BertForSequenceClassification.from_pretrained('test_model-2', num_labels=num_labels,
-                                                                    id2label=id2label,
-                                                                    label2id=label2id)
-        bert_model3 = BertForSequenceClassification.from_pretrained('test_model-3', num_labels=num_labels,
-                                                                    id2label=id2label,
-                                                                    label2id=label2id)
-        evaluate_model_on_test_set(tokenizer=bert_tokenizer,
-                                   evaluated_model=bert_model1,
-                                   X_test=X_test,
-                                   y_test=y_test)
-        evaluate_model_on_test_set(tokenizer=bert_tokenizer,
-                                   evaluated_model=bert_model2,
-                                   X_test=X_test,
-                                   y_test=y_test)
-        evaluate_model_on_test_set(tokenizer=bert_tokenizer,
-                                   evaluated_model=bert_model3,
-                                   X_test=X_test,
-                                   y_test=y_test)
 
-
-    elif _train:
+    if _train:
         train_metrics = {}
         eval_metrics = {}
-        metrics = {'train_loss': [], 'eval_loss': [], 'accuracy': []}
+
+        metrics = {'train_loss': [], 'eval_loss': [], 'accuracy': [], 'f1': []}
+
         current_dir = f"Training-{current_date()}"
         os.makedirs(current_dir, exist_ok=True)
+
         with open(os.path.join(current_dir, f"training-log-{current_date()}"), 'w') as file:
-            kf = StratifiedKFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
+            kf = KFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
             for fold, (train_idx, val_idx) in enumerate(kf.split(X, y)):
                 X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
@@ -64,10 +54,12 @@ if _train or _evaluate:
 
                 args = TrainingArguments(
                     output_dir=os.path.join(current_dir, f"fold{fold + 1}-{current_date()}"),
+                    learning_rate=1e-5,
+                    warmup_ratio=0.1,
                     num_train_epochs=NUM_EPOCHS,
                     per_device_train_batch_size=BATCH_SIZE,
                     save_strategy="epoch",
-                    evaluation_strategy="epoch",  # Evaluate at the end of each epoch
+                    evaluation_strategy="epoch",
                 )
 
                 trainer = Trainer(
@@ -94,6 +86,7 @@ if _train or _evaluate:
                 metrics['train_loss'].append(train_result.metrics['train_loss'])
                 metrics['eval_loss'].append(eval_result['eval_loss'])
                 metrics['accuracy'].append(eval_result['eval_accuracy'])
+                metrics['f1'].append(eval_result['eval_f1'])
 
             plt.figure(figsize=(10, 5))
 
@@ -117,9 +110,32 @@ if _train or _evaluate:
 
             plt.tight_layout()
 
-            # Save or show the plot
             plot_file_path = os.path.join(current_dir, "loss-accuracy-plot.png")
             plt.savefig(plot_file_path)
+
+            # X_test_tokenized = bert_tokenizer(list(X_test), padding=True, truncation=True, max_length=512)
+            #
+            # test_dataset = CustomDataset(X_test_tokenized, y_test)
+            # trainer = Trainer(
+            #     model=trainer.state.best_model_checkpoint,
+            #     args=args,
+            #     eval_dataset=test_dataset,
+            #     compute_metrics=compute_metrics
+            # )
+            # evaluation = trainer.evaluate()
+    elif _evaluate:
+        X_test_tokenized = bert_tokenizer(list(X_test), padding=True, truncation=True, max_length=512)
+        eval_model = r'functional-model'
+        eval_model=BertForSequenceClassification.from_pretrained(eval_model, num_labels=num_labels, id2label=id2label,
+                                                           label2id=label2id).to('cuda')
+
+        test_dataset = CustomDataset(X_test_tokenized, y_test)
+        trainer = Trainer(
+            model=eval_model,
+            eval_dataset=test_dataset,
+            compute_metrics=compute_metrics
+        )
+        print(trainer.evaluate())
         # plt.show()
 
 if _prompt == True:
@@ -129,7 +145,9 @@ if _prompt == True:
         "Do not do that",  # CP
         "I have realized how that works",  # A
         "I am so excited to see you!",  # FC
-        "I don't want to upset you"  # AC
+        "I don't want to upset you",  # AC
+        "In my opinion it is possibly a right solution",
+        "I am surprised that worked out the way it did, wow"
     ]
     trained_models = [
         BertForSequenceClassification.from_pretrained('test_model-1/',
@@ -137,6 +155,14 @@ if _prompt == True:
                                                       id2label=id2label,
                                                       label2id=label2id),
         BertForSequenceClassification.from_pretrained('test_model-2/',
+                                                      num_labels=num_labels,
+                                                      id2label=id2label,
+                                                      label2id=label2id),
+        BertForSequenceClassification.from_pretrained('test_model-3/',
+                                                      num_labels=num_labels,
+                                                      id2label=id2label,
+                                                      label2id=label2id),
+        BertForSequenceClassification.from_pretrained(r'Training-08-12-2023-12-06\fold5-08-12-2023-16-53\checkpoint-14676',
                                                       num_labels=num_labels,
                                                       id2label=id2label,
                                                       label2id=label2id)
@@ -164,3 +190,5 @@ if _prompt == True:
             plt.close()  # Close the plot to free memory
 
     print("All plots saved.")
+end_time = time.monotonic()
+print(timedelta(seconds=end_time - start_time))
