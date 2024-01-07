@@ -4,7 +4,9 @@ from sklearn.model_selection import train_test_split, KFold
 from transformers import Trainer, TrainingArguments
 import time
 from datetime import timedelta
-
+from config.globals import *
+from config.neuralnet import *
+from matplotlib import pyplot as plt
 start_time = time.monotonic()
 _train = True
 _evaluate = False
@@ -22,7 +24,7 @@ _prompt = False
 # hyperparameter_train_loop()
 
 if _train or _evaluate:
-    dataset_path = "data/dataset-structural.csv"
+    dataset_path = "data/dataset-functional.csv"
     dataset = pd.read_csv(dataset_path, delimiter=";")
     dataset = downsample_dataset(dataset)
 

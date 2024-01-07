@@ -1,5 +1,5 @@
 import pandas as pd
-from inżynierka.config.globals import ID2LABEL
+from config.globals import ID2LABEL
 import torch.utils.data
 class CustomDataset(torch.utils.data.Dataset):
     def __init__(self, encodings, labels=None):

@@ -1,4 +1,4 @@
-from inżynierka.config.globals import NUM_LABELS, ID2LABEL, LABEL2ID, DEVICE
+from config.globals import NUM_LABELS, ID2LABEL, LABEL2ID, DEVICE
 from transformers import BertTokenizer, BertForSequenceClassification
 
 base_model = 'bert-base-uncased'
