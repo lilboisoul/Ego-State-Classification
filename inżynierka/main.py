@@ -1,194 +1,177 @@
-from config.preprocessing import original_dataset_to_mapped_dataset
-from helper import *
-from sklearn.model_selection import train_test_split, StratifiedKFold, KFold
+from helper.helper import *
+from helper.dataset import *
+from sklearn.model_selection import train_test_split, KFold
 from transformers import Trainer, TrainingArguments
 import time
 from datetime import timedelta
+
 start_time = time.monotonic()
-_train = True
+_train = False
 _evaluate = False
-_prompt = False
-#DATASET REMAPPING
-#original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-functional.csv")
-#original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-structural.csv")
-#HYPERPARAMETER SEARCH
-#hyperparameter_train_loop()
+_prompt = True
 
+# DATASET REMAPPING
+# original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-functional.csv")
+# original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-structural.csv")
 
+# SUBSET GENERATION
+# df = pd.read_csv("data/dataset-structural.csv", delimiter=";")
+# subset_generator(df, 1000)
 
-
+# HYPERPARAMETER SEARCH
+# hyperparameter_train_loop()
 
 if _train or _evaluate:
-    df = pd.read_csv("data/dataset-structural.csv", delimiter=";")
-    #df = load_dataset("data/goemotions-1000-label.csv")
-    df = downsample_dataset(df)
+    dataset_path = "data/dataset-structural.csv"
+    dataset = pd.read_csv(dataset_path, delimiter=";")
+    dataset = downsample_dataset(dataset)
 
-    X = df["text"]
-    y = df["label"].to_numpy()
+    dataset_text = dataset["text"]
+    dataset_label = dataset["label"].to_numpy()
 
-    # Create 85/15 train/test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-    X = X_train
-    y = y_train
+    text_training, text_test, label_training, label_test = train_test_split(dataset_text,
+                                                                            dataset_label,
+                                                                            test_size=0.2,
+                                                                            stratify=dataset_label,
+                                                                            random_state=42)
+    text = text_training
+    label = label_training
 
     if _train:
         train_metrics = {}
         eval_metrics = {}
-
-        metrics = {'train_loss': [], 'eval_loss': [], 'accuracy': [], 'f1': []}
-
+        metrics = {'train_loss': [], 'eval_loss': [], 'accuracy': []}
         current_dir = f"Training-{current_date()}"
         os.makedirs(current_dir, exist_ok=True)
 
-        with open(os.path.join(current_dir, f"training-log-{current_date()}"), 'w') as file:
-            kf = KFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
-            for fold, (train_idx, val_idx) in enumerate(kf.split(X, y)):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y[train_idx], y[val_idx]
+        kf = KFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
+        for fold, (train_idx, val_idx) in enumerate(kf.split(text_training, label_training)):
+            text_train, text_validation = text_training.iloc[train_idx], text_training.iloc[val_idx]
+            label_train, label_validation = label_training[train_idx], label_training[val_idx]
 
-                X_train_tokenized = bert_tokenizer(list(X_train), padding=True, truncation=True, max_length=512)
-                X_val_tokenized = bert_tokenizer(list(X_val), padding=True, truncation=True, max_length=512)
+            text_train_tokenized =      bert_tokenizer(list(text_train),
+                                                       padding=True,
+                                                       truncation=True,
+                                                       max_length=512)
+            text_validation_tokenized = bert_tokenizer(list(text_validation),
+                                                       padding=True,
+                                                       truncation=True,
+                                                       max_length=512)
 
-                train_dataset = CustomDataset(X_train_tokenized, y_train)
-                eval_dataset = CustomDataset(X_val_tokenized, y_val)
+            train_dataset =      CustomDataset(text_train_tokenized, label_train)
+            validation_dataset = CustomDataset(text_validation_tokenized, label_validation)
 
-                args = TrainingArguments(
-                    output_dir=os.path.join(current_dir, f"fold{fold + 1}-{current_date()}"),
-                    learning_rate=1e-5,
-                    warmup_ratio=0.1,
-                    num_train_epochs=NUM_EPOCHS,
-                    per_device_train_batch_size=BATCH_SIZE,
-                    save_strategy="epoch",
-                    evaluation_strategy="epoch",
-                )
+            args = TrainingArguments(
+                output_dir=os.path.join(current_dir, f"fold{fold + 1}-{current_date()}"),
+                learning_rate=LEARNING_RATE,
+                warmup_ratio=WARMUP_RATIO,
+                num_train_epochs=NUM_EPOCHS,
+                per_device_train_batch_size=BATCH_SIZE,
+                save_strategy="epoch",
+            )
+            trainer = Trainer(
+                model=bert_model,
+                args=args,
+                train_dataset=train_dataset,
+                eval_dataset=validation_dataset,
+                compute_metrics=compute_metrics_training
+            )
+            print(f"Training fold {fold + 1}...")
 
-                trainer = Trainer(
-                    model=bert_model,
-                    args=args,
-                    train_dataset=train_dataset,
-                    eval_dataset=eval_dataset,
-                    compute_metrics=compute_metrics
-                )
-                print(f"Training fold {fold + 1}...")
-                file.write(f"Training fold {fold + 1}\n")
+            train_result = trainer.train()
+            eval_result = trainer.evaluate()
 
-                train_result = trainer.train()
-                file.write(f"Train {fold + 1}\n")
-                for key, val in train_result.metrics.items():
-                    file.write(f"{key} : {val}\n")
+            metrics['train_loss'].append(train_result.metrics['train_loss'])
+            metrics['eval_loss'].append(eval_result['eval_loss'])
+            metrics['accuracy'].append(eval_result['eval_accuracy'])
 
-                eval_result = trainer.evaluate()
-                file.write(f"Eval {fold + 1}\n")
-                for key, val in eval_result.items():
-                    file.write(f"{key} : {val}\n")
+        plt.figure(figsize=(10, 5))
 
-                # save_evaluation_results(eval_result, file)
-                metrics['train_loss'].append(train_result.metrics['train_loss'])
-                metrics['eval_loss'].append(eval_result['eval_loss'])
-                metrics['accuracy'].append(eval_result['eval_accuracy'])
-                metrics['f1'].append(eval_result['eval_f1'])
+        plt.subplot(1, 3, 1)
+        plt.plot(range(1, NUM_FOLDS + 1), metrics['train_loss'], marker='o', color='r')
+        plt.title("Loss per Fold")
+        plt.xlabel("Fold")
+        plt.ylabel("Train Loss")
 
-            plt.figure(figsize=(10, 5))
+        plt.subplot(1, 3, 2)
+        plt.plot(range(1, NUM_FOLDS + 1), metrics['eval_loss'], marker='o', color='g')
+        plt.title("Loss per Fold")
+        plt.xlabel("Fold")
+        plt.ylabel("Eval Loss")
 
-            plt.subplot(1, 3, 1)
-            plt.plot(range(1, NUM_FOLDS + 1), metrics['train_loss'], marker='o', color='r')
-            plt.title("Loss per Fold")
-            plt.xlabel("Fold")
-            plt.ylabel("Train Loss")
+        plt.subplot(1, 3, 3)
+        plt.plot(range(1, NUM_FOLDS + 1), metrics['accuracy'], marker='o', color='r')
+        plt.title("Accuracy per Fold")
+        plt.xlabel("Fold")
+        plt.ylabel("Accuracy")
 
-            plt.subplot(1, 3, 2)
-            plt.plot(range(1, NUM_FOLDS + 1), metrics['eval_loss'], marker='o', color='g')
-            plt.title("Loss per Fold")
-            plt.xlabel("Fold")
-            plt.ylabel("Eval Loss")
+        plt.tight_layout()
 
-            plt.subplot(1, 3, 3)
-            plt.plot(range(1, NUM_FOLDS + 1), metrics['accuracy'], marker='o', color='r')
-            plt.title("Accuracy per Fold")
-            plt.xlabel("Fold")
-            plt.ylabel("Accuracy")
+        plot_file_path = os.path.join(current_dir, "loss-accuracy-plot.png")
+        plt.savefig(plot_file_path)
 
-            plt.tight_layout()
-
-            plot_file_path = os.path.join(current_dir, "loss-accuracy-plot.png")
-            plt.savefig(plot_file_path)
-
-            # X_test_tokenized = bert_tokenizer(list(X_test), padding=True, truncation=True, max_length=512)
-            #
-            # test_dataset = CustomDataset(X_test_tokenized, y_test)
-            # trainer = Trainer(
-            #     model=trainer.state.best_model_checkpoint,
-            #     args=args,
-            #     eval_dataset=test_dataset,
-            #     compute_metrics=compute_metrics
-            # )
-            # evaluation = trainer.evaluate()
     elif _evaluate:
-        X_test_tokenized = bert_tokenizer(list(X_test), padding=True, truncation=True, max_length=512)
-        eval_model = r'functional-model'
-        eval_model=BertForSequenceClassification.from_pretrained(eval_model, num_labels=num_labels, id2label=id2label,
-                                                           label2id=label2id).to('cuda')
+        text_test_tokenized = bert_tokenizer(list(text_test),
+                                             padding=True,
+                                             truncation=True,
+                                             max_length=512)
+        evaluation_model_path = r'structural-model'
+        evaluation_model = BertForSequenceClassification.from_pretrained(evaluation_model_path,
+                                                                   num_labels=NUM_LABELS,
+                                                                   id2label=ID2LABEL,
+                                                                   label2id=LABEL2ID).to('cuda')
 
-        test_dataset = CustomDataset(X_test_tokenized, y_test)
+        test_dataset = CustomDataset(text_test_tokenized, label_test)
+
         trainer = Trainer(
-            model=eval_model,
+            model=evaluation_model,
             eval_dataset=test_dataset,
-            compute_metrics=compute_metrics
+            compute_metrics=compute_metrics_evaluation
         )
         print(trainer.evaluate())
-        # plt.show()
 
-if _prompt == True:
-    np.set_printoptions(suppress=True)
+if _prompt:
     texts = [
         "I'm so proud of all your accomplishments.",  # NP
         "Do not do that",  # CP
-        "I have realized how that works",  # A
         "I am so excited to see you!",  # FC
         "I don't want to upset you",  # AC
-        "In my opinion it is possibly a right solution",
-        "I am surprised that worked out the way it did, wow"
     ]
-    trained_models = [
-        BertForSequenceClassification.from_pretrained('test_model-1/',
-                                                      num_labels=num_labels,
-                                                      id2label=id2label,
-                                                      label2id=label2id),
-        BertForSequenceClassification.from_pretrained('test_model-2/',
-                                                      num_labels=num_labels,
-                                                      id2label=id2label,
-                                                      label2id=label2id),
-        BertForSequenceClassification.from_pretrained('test_model-3/',
-                                                      num_labels=num_labels,
-                                                      id2label=id2label,
-                                                      label2id=label2id),
-        BertForSequenceClassification.from_pretrained(r'Training-08-12-2023-12-06\fold5-08-12-2023-16-53\checkpoint-14676',
-                                                      num_labels=num_labels,
-                                                      id2label=id2label,
-                                                      label2id=label2id)
-    ]
-    predictions_dir = 'predictions'
+    trained_model_path = 'functional-model'
+    trained_model = BertForSequenceClassification.from_pretrained(
+            trained_model_path,
+            num_labels=NUM_LABELS,
+            id2label=ID2LABEL,
+            label2id=LABEL2ID).to('cuda')
+
+    predictions_dir = 'predictions-functional'
     os.makedirs(predictions_dir, exist_ok=True)
 
-    for i, _model in enumerate(trained_models):
-        current_model = _model.to('cuda')
+    for i, text in enumerate(texts):
+        predictions = get_predictions(text=text,
+                                      tokenizer=bert_tokenizer,
+                                      model=trained_model)[0]
 
-        for j, text in enumerate(texts):
-            predictions = get_predictions(text=text, tokenizer=bert_tokenizer, model=current_model)[0]
+        prediction_index = np.argmax(predictions)
+        prediction_value = predictions[prediction_index]
 
-            plt.figure(figsize=(12, 6))
-            plt.bar(config.globals.labels, predictions)
-            plt.title(f"Text input: '{text}'")
-            plt.ylabel('Probability')
-            plt.ylim([0, 1])
+        result = ID2LABEL[prediction_index]
 
-            # Generate a filename for each plot
-            plot_filename = os.path.join(predictions_dir, f"model{i + 1}_text_{j + 1}.png")
+        np.set_printoptions(suppress=True)
+        print(f"Text: {text} | label: {result}")
 
-            # Save the plot to the file
-            plt.savefig(plot_filename)
-            plt.close()  # Close the plot to free memory
+        plt.figure(figsize=(12, 6))
+        plt.bar(LABELS, predictions)
+        plt.title(f"Text input: '{text}'")
+        plt.ylabel('Probability')
+        plt.ylim([0, 1])
+
+        plot_filename = os.path.join(predictions_dir, f"prediction_text_{i + 1}.png")
+
+        plt.savefig(plot_filename)
+        plt.close()
 
     print("All plots saved.")
+
 end_time = time.monotonic()
 print(timedelta(seconds=end_time - start_time))
