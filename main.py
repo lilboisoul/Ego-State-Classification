@@ -1,4 +1,4 @@
-import helper.helper
+from helper.helper import *
 from helper.dataset import *
 from sklearn.model_selection import train_test_split, KFold
 from transformers import Trainer, TrainingArguments
@@ -8,13 +8,12 @@ from config.globals import *
 from config.neuralnet import *
 from matplotlib import pyplot as plt
 start_time = time.monotonic()
-_train = True
+_train = False
 _evaluate = False
 _prompt = False
 
 # DATASET REMAPPING
-# original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-functional.csv")
-# original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-structural.csv")
+# original_dataset_to_mapped_dataset("data/dataset-to-remap.csv", "data/dataset-remapped.csv")
 
 # SUBSET GENERATION
 # df = pd.read_csv("data/dataset-structural.csv", delimiter=";")
@@ -24,7 +23,7 @@ _prompt = False
 # hyperparameter_train_loop()
 
 if _train or _evaluate:
-    dataset_path = "data/dataset-functional.csv"
+    dataset_path = "data/subset.csv"
     dataset = pd.read_csv(dataset_path, delimiter=";")
     dataset = downsample_dataset(dataset)
 
@@ -43,8 +42,8 @@ if _train or _evaluate:
         train_metrics = {}
         eval_metrics = {}
         metrics = {'train_loss': [], 'eval_loss': [], 'accuracy': []}
-        current_dir = f"Training-{helper.helper.current_date()}"
-        helper.helper.os.makedirs(current_dir, exist_ok=True)
+        current_dir = f"Training-{current_date()}"
+        os.makedirs(current_dir, exist_ok=True)
 
         kf = KFold(n_splits=NUM_FOLDS, shuffle=True, random_state=42)
         for fold, (train_idx, val_idx) in enumerate(kf.split(text_training, label_training)):
@@ -64,7 +63,7 @@ if _train or _evaluate:
             validation_dataset = CustomDataset(text_validation_tokenized, label_validation)
 
             args = TrainingArguments(
-                output_dir=helper.helper.os.path.join(current_dir, f"fold{fold + 1}-{helper.helper.current_date()}"),
+                output_dir=os.path.join(current_dir, f"fold{fold + 1}-{current_date()}"),
                 learning_rate=LEARNING_RATE,
                 warmup_ratio=WARMUP_RATIO,
                 num_train_epochs=NUM_EPOCHS,
@@ -76,7 +75,7 @@ if _train or _evaluate:
                 args=args,
                 train_dataset=train_dataset,
                 eval_dataset=validation_dataset,
-                compute_metrics=helper.helper.compute_metrics_training
+                compute_metrics=compute_metrics_training
             )
             print(f"Training fold {fold + 1}...")
 
@@ -109,7 +108,7 @@ if _train or _evaluate:
 
         plt.tight_layout()
 
-        plot_file_path = helper.helper.os.path.join(current_dir, "loss-accuracy-plot.png")
+        plot_file_path = os.path.join(current_dir, "loss-accuracy-plot.png")
         plt.savefig(plot_file_path)
 
     elif _evaluate:
@@ -117,7 +116,7 @@ if _train or _evaluate:
                                              padding=True,
                                              truncation=True,
                                              max_length=512)
-        evaluation_model_path = r'structural-model'
+        evaluation_model_path = r'functional-model'
         evaluation_model = BertForSequenceClassification.from_pretrained(evaluation_model_path,
                                                                    num_labels=NUM_LABELS,
                                                                    id2label=ID2LABEL,
@@ -128,7 +127,7 @@ if _train or _evaluate:
         trainer = Trainer(
             model=evaluation_model,
             eval_dataset=test_dataset,
-            compute_metrics=helper.helper.compute_metrics_evaluation
+            compute_metrics=compute_metrics_evaluation
         )
         print(trainer.evaluate())
 
@@ -146,20 +145,20 @@ if _prompt:
             id2label=ID2LABEL,
             label2id=LABEL2ID).to('cuda')
 
-    predictions_dir = 'predictions-functional'
-    helper.helper.os.makedirs(predictions_dir, exist_ok=True)
+    predictions_dir = 'predictions'
+    os.makedirs(predictions_dir, exist_ok=True)
 
     for i, text in enumerate(texts):
-        predictions = helper.helper.get_predictions(text=text,
+        predictions = get_predictions(text=text,
                                                     tokenizer=bert_tokenizer,
                                                     model=trained_model)[0]
 
-        prediction_index = helper.helper.np.argmax(predictions)
+        prediction_index = np.argmax(predictions)
         prediction_value = predictions[prediction_index]
 
         result = ID2LABEL[prediction_index]
 
-        helper.helper.np.set_printoptions(suppress=True)
+        np.set_printoptions(suppress=True)
         print(f"Text: {text} | label: {result}")
 
         plt.figure(figsize=(12, 6))
@@ -168,7 +167,7 @@ if _prompt:
         plt.ylabel('Probability')
         plt.ylim([0, 1])
 
-        plot_filename = helper.helper.os.path.join(predictions_dir, f"prediction_text_{i + 1}.png")
+        plot_filename = os.path.join(predictions_dir, f"prediction_text_{i + 1}.png")
 
         plt.savefig(plot_filename)
         plt.close()

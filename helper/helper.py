@@ -12,6 +12,8 @@ from transformers import Trainer, TrainingArguments
 
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, confusion_matrix
 
+from helper.dataset import CustomDataset
+
 
 def compute_metrics_evaluation(p):
     p_pred, p_labels = p
@@ -28,8 +30,6 @@ def compute_metrics_evaluation(p):
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.show()
-    plot_file_path = os.path.join("confusion-matrix.png")
-    plt.savefig(plot_file_path)
     return {"accuracy": accuracy,
             "recall": recall,
             "precision": precision,
@@ -43,16 +43,6 @@ def compute_metrics_training(p):
     recall = recall_score(y_true=p_labels, y_pred=p_pred, average='macro')
     precision = precision_score(y_true=p_labels, y_pred=p_pred, average='macro')
     f1 = f1_score(y_true=p_labels, y_pred=p_pred, average='macro')
-
-    conf_matrix = confusion_matrix(p_labels, p_pred)
-    plt.figure(figsize=(10, 7))
-    sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=LABELS, yticklabels=LABELS)
-    plt.title("Confusion Matrix")
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
-    plt.show()
-    plot_file_path = os.path.join("confusion-matrix.png")
-    plt.savefig(plot_file_path)
     return {"accuracy": accuracy,
             "recall": recall,
             "precision": precision,
@@ -77,13 +67,9 @@ def get_predictions(text, tokenizer, model):
 
 def hyperparameter_train_loop():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device == "cuda":
-        model = bert_model.to('cuda')
-    else:
-        model = bert_model
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-    df = pd.read_csv(r"/data/small_dataset.csv", delimiter=";")
+    df = pd.read_csv(r"data/subset.csv", delimiter=";")
 
     X = df["text"]
     y = df["label"].to_numpy()
